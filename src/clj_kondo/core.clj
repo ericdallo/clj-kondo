@@ -91,27 +91,32 @@
            :no-warnings]
     :or {cache true}}]
   (let [start-time (System/currentTimeMillis)
-        cfg-dir (or (when config-dir
-                      (io/file config-dir))
-                    (core-impl/config-dir (io/file (System/getProperty "user.dir"))))
+        cfg-dir
+        (cond config-dir (io/file config-dir)
+              filename (core-impl/config-dir filename)
+              :else
+              (core-impl/config-dir (io/file (System/getProperty "user.dir"))))
         ;; for backward compatibility non-sequential config should be wrapped into collection
-        config (if (System/getenv "CLJ_KONDO_DEV")
-                 (time (core-impl/resolve-config cfg-dir (if (sequential? config) config [config])))
-                 (core-impl/resolve-config cfg-dir (if (sequential? config) config [config])))
+        config (core-impl/resolve-config cfg-dir (if (sequential? config) config [config]))
         classpath (:classpath config)
         config (dissoc config :classpath)
         cache-dir (when cache (core-impl/resolve-cache-dir cfg-dir cache cache-dir))
         files (atom 0)
         findings (atom [])
         analysis-cfg (get-in config [:output :analysis])
-        analyze-locals? (get-in config [:output :analysis :locals])
+        analyze-locals? (get analysis-cfg :locals)
+        analyze-keywords? (get analysis-cfg :keywords)
         analysis (when analysis-cfg
                    (atom (cond-> {:namespace-definitions []
                                   :namespace-usages []
                                   :var-definitions []
                                   :var-usages []}
                            analyze-locals? (assoc :locals []
-                                                  :local-usages []))))
+                                                  :local-usages [])
+                           analyze-keywords? (assoc :keywords []))))
+        used-nss (atom {:clj #{}
+                        :cljs #{}
+                        :cljc #{}})
         ctx {:no-warnings no-warnings
              :config-dir cfg-dir
              :config config
@@ -123,28 +128,32 @@
              :namespaces (atom {})
              :analysis analysis
              :cache-dir cache-dir
-             :used-namespaces (atom {:clj #{}
-                                     :cljs #{}
-                                     :cljc #{}})
+             :used-namespaces used-nss
              :ignores (atom {})
              :id-gen (when analyze-locals? (atom 0))
              :analyze-locals? analyze-locals?
+             :analyze-keywords? analyze-keywords?
              :analyze-arglists? (get analysis-cfg :arglists)}
         lang (or lang :clj)
         _ (core-impl/process-files (if parallel
                                      (assoc ctx :parallel parallel)
                                      ctx) lint lang filename)
+        ;; _ (prn :used-nss @used-nss)
         idacs (core-impl/index-defs-and-calls ctx)
         idacs (cache/sync-cache idacs cache-dir)
         idacs (overrides idacs)
-        _ (l/lint-var-usage ctx idacs)
-        _ (l/lint-unused-namespaces! ctx)
-        _ (l/lint-unused-private-vars! ctx)
-        _ (l/lint-unused-bindings! ctx)
-        _ (l/lint-unresolved-symbols! ctx)
-        _ (l/lint-unused-imports! ctx)
-        _ (l/lint-unresolved-namespaces! ctx)
-        ;; _ (namespace/reg-analysis-output! ctx)
+        _ (when (and no-warnings (not analysis))
+            ;; analysis is called from lint-var-usage, this can probably happen somewhere else
+            (l/lint-var-usage ctx idacs))
+        _ (when-not no-warnings
+            (l/lint-var-usage ctx idacs)
+            (l/lint-unused-namespaces! ctx)
+            (l/lint-unused-private-vars! ctx)
+            (l/lint-unused-bindings! ctx)
+            (l/lint-unresolved-symbols! ctx)
+            (l/lint-unresolved-vars! ctx)
+            (l/lint-unused-imports! ctx)
+            (l/lint-unresolved-namespaces! ctx))
         all-findings @findings
         all-findings (core-impl/filter-findings config all-findings)
         all-findings (into [] (dedupe) (sort-by (juxt :filename :row :col) all-findings))

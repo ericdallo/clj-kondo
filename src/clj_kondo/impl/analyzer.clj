@@ -8,6 +8,7 @@
    [clj-kondo.impl.analyzer.core-async :as core-async]
    [clj-kondo.impl.analyzer.datalog :as datalog]
    [clj-kondo.impl.analyzer.jdbc :as jdbc]
+   [clj-kondo.impl.analyzer.match :as match]
    [clj-kondo.impl.analyzer.namespace :as namespace-analyzer
     :refer [analyze-ns-decl]]
    [clj-kondo.impl.analyzer.potemkin :as potemkin]
@@ -42,7 +43,6 @@
   ([ctx children]
    (analyze-children ctx children true))
   ([{:keys [:callstack :config :top-level?] :as ctx} children add-new-arg-types?]
-   ;; (prn callstack)
    (let [top-level? (and top-level?
                          (let [fst (first callstack)]
                            (one-of fst [[clojure.core comment]
@@ -59,7 +59,7 @@
                                          (atom [])
                                          nil))
                                      (:arg-types ctx)))]
-         (mapcat #(analyze-expression** ctx %) children))))))
+         (into [] (mapcat #(analyze-expression** ctx %)) children))))))
 
 (defn analyze-keys-destructuring-defaults [ctx prev-ctx m defaults opts]
   (let [skip-reg-binding? (when (:fn-args? opts)
@@ -139,6 +139,8 @@
            ;; symbol
            (utils/symbol-token? expr)
            (let [sym (:value expr)]
+             (when (= (:destructuring-type opts) :keys)
+               (usages/analyze-keyword ctx expr opts))
              (when (not= '& sym)
                (let [ns (namespace sym)
                      valid? (or (not ns)
@@ -172,7 +174,7 @@
            ;; keyword
            (:k expr)
            (let [k (:k expr)]
-             (usages/analyze-keyword ctx expr)
+             (usages/analyze-keyword ctx expr opts)
              (if keys-destructuring?
                (let [s (-> k name symbol)
                      m (meta expr)
@@ -234,7 +236,10 @@
                                                       ctx
                                                       %
                                                       scoped-expr
-                                                      (assoc opts :keys-destructuring? true)))
+                                                      (assoc opts
+                                                             :keys-destructuring? true
+                                                             :destructuring-type (some-> k :k name keyword)
+                                                             :destructuring-expr k)))
                                           (:children v)))
                              ;; or doesn't introduce new bindings, it only gives defaults
                              :or
@@ -1035,12 +1040,10 @@
 
 (defn analyze-defmethod [ctx expr]
   (let [children (next (:children expr))
-        [method-name-node dispatch-val-node & body-exprs] children
+        [method-name-node dispatch-val-node & fn-tail] children
         _ (analyze-usages2 ctx method-name-node)
-        bodies (fn-bodies ctx body-exprs expr)
-        analyzed-bodies (map #(analyze-fn-body ctx %) bodies)]
-    (concat (analyze-expression** ctx dispatch-val-node)
-            (mapcat :parsed analyzed-bodies))))
+        _ (analyze-expression** ctx dispatch-val-node)]
+    (analyze-fn ctx {:children (cons nil fn-tail)})))
 
 (defn analyze-areduce [ctx expr]
   (let [children (next (:children expr))
@@ -1302,7 +1305,7 @@
     (analyze-children ctx children false)))
 
 (defn analyze-call
-  [{:keys [:top-level? :base-lang :lang :ns :config] :as ctx}
+  [{:keys [:top-level? :base-lang :lang :ns :config :no-warnings] :as ctx}
    {:keys [:arg-count
            :full-fn-name
            :row :col
@@ -1311,9 +1314,12 @@
         children (next (:children expr))
         {resolved-namespace :ns
          resolved-name :name
+         resolved-alias :alias
          unresolved? :unresolved?
          unresolved-ns :unresolved-ns
          clojure-excluded? :clojure-excluded?
+         interop? :interop?
+         resolved-core? :resolved-core?
          :as _m}
         (resolve-name ctx ns-name full-fn-name)
         expr-meta (meta expr)]
@@ -1370,6 +1376,7 @@
                                                        :name (with-meta
                                                                (or resolved-name full-fn-name)
                                                                (meta full-fn-name))
+                                                       :alias resolved-alias
                                                        :unresolved? unresolved?
                                                        :unresolved-ns unresolved-ns
                                                        :clojure-excluded? clojure-excluded?
@@ -1381,12 +1388,15 @@
                                                        :base-lang base-lang
                                                        :lang lang
                                                        :filename (:filename ctx)
-                                                       :expr expr
+                                                       ;; save some memory during no-warnings
+                                                       :expr (when-not no-warnings expr)
                                                        :simple? (simple-symbol? full-fn-name)
                                                        :callstack (:callstack ctx)
                                                        :config (:config ctx)
                                                        :top-ns (:top-ns ctx)
-                                                       :arg-types (:arg-types ctx)})
+                                                       :arg-types (:arg-types ctx)
+                                                       :interop? interop?
+                                                       :resolved-core? resolved-core?})
                   ;;;; This registers the namespace as used, to prevent unused warnings
                 (namespace/reg-used-namespace! ctx
                                                ns-name
@@ -1511,18 +1521,22 @@
                         [schema.core defrecord]
                         (analyze-schema ctx 'defrecord expr)
                         ([clojure.test deftest]
-                         [cljs.test deftest]
-                         #_[:clj-kondo/unknown-namespace deftest])
-                        (do (lint-inline-def! ctx expr)
-                            (test/analyze-deftest ctx expr
-                                                  resolved-namespace resolved-name
-                                                  resolved-as-namespace resolved-as-name))
+                         [cljs.test deftest])
+                        (test/analyze-deftest ctx expr
+                                              resolved-namespace resolved-name
+                                              resolved-as-namespace resolved-as-name)
+                        [clojure.core.match match]
+                        (match/analyze-match ctx expr)
                         [clojure.string replace]
                         (analyze-clojure-string-replace ctx expr)
                         [cljs.test async]
                         (test/analyze-cljs-test-async ctx expr)
                         ([clojure.test are] [cljs.test are] #_[clojure.template do-template])
                         (test/analyze-are ctx expr)
+                        [cljs.spec.alpha def]
+                        (spec/analyze-def ctx expr 'cljs.spec.alpha/def)
+                        [clojure.spec.alpha def]
+                        (spec/analyze-def ctx expr 'clojure.spec.alpha/def)
                         ([clojure.spec.alpha fdef] [cljs.spec.alpha fdef])
                         (spec/analyze-fdef (assoc ctx
                                                   :analyze-children
@@ -1587,6 +1601,7 @@
                                     :name (with-meta
                                             (or resolved-name full-fn-name)
                                             (meta full-fn-name))
+                                    :alias resolved-alias
                                     :unresolved? unresolved?
                                     :unresolved-ns unresolved-ns
                                     :clojure-excluded? clojure-excluded?
@@ -1598,12 +1613,14 @@
                                     :base-lang base-lang
                                     :lang lang
                                     :filename (:filename ctx)
-                                    :expr expr
+                                    :expr (when-not no-warnings expr)
                                     :callstack (:callstack ctx)
                                     :config (:config ctx)
                                     :top-ns (:top-ns ctx)
                                     :arg-types (:arg-types ctx)
-                                    :simple? (simple-symbol? full-fn-name)}
+                                    :simple? (simple-symbol? full-fn-name)
+                                    :interop? interop?
+                                    :resolved-core? resolved-core?}
                         ret-tag (or (:ret m)
                                     (types/ret-tag-from-call ctx proto-call expr))
                         call (cond-> proto-call
@@ -1927,11 +1944,12 @@
     (let [parsed (p/parse-string input)]
       (case lang
         :cljc
-        (do
-          (analyze-expressions (assoc ctx :base-lang :cljc :lang :clj :filename filename)
-                               (:children (select-lang parsed :clj)))
-          (analyze-expressions (assoc ctx :base-lang :cljc :lang :cljs :filename filename)
-                               (:children (select-lang parsed :cljs))))
+        (let [cljc-config (:cljc config)
+              features (or (:features cljc-config)
+                           [:clj :cljs])]
+          (doseq [lang features]
+            (analyze-expressions (assoc ctx :base-lang :cljc :lang lang :filename filename)
+                                 (:children (select-lang parsed lang)))))
         (:clj :cljs :edn)
         (let [ctx (assoc ctx :base-lang lang :lang lang :filename filename)]
           (analyze-expressions ctx (:children parsed))

@@ -2,32 +2,68 @@
   {:no-doc true}
   (:refer-clojure :exclude [ns-name])
   (:require
+    [clj-kondo.impl.analysis :as analysis]
     [clj-kondo.impl.analyzer.common :as common]
     [clj-kondo.impl.metadata :as meta]
     [clj-kondo.impl.namespace :as namespace]
-    [clj-kondo.impl.utils :as utils :refer [tag one-of symbol-from-token tag kw->sym assoc-some]]
+    [clj-kondo.impl.utils :as utils :refer [tag one-of symbol-from-token kw->sym assoc-some symbol-token?]]
     [clojure.string :as str])
   (:import [clj_kondo.impl.rewrite_clj.node.seq NamespacedMapNode]))
 
 (set! *warn-on-reflection* true)
 
-(defn analyze-keyword [ctx expr]
-  (let [ns (:ns ctx)
-        ns-name (:name ns)
-        keyword-val (:k expr)]
-    (when (:namespaced? expr)
-      (let [symbol-val (kw->sym keyword-val)
-            {resolved-ns :ns
-             _resolved-name :name
-             _unresolved? :unresolved? :as _m}
-            (namespace/resolve-name ctx ns-name symbol-val)]
-        (if resolved-ns
-          (namespace/reg-used-namespace! ctx
-                                         (-> ns :name)
-                                         resolved-ns)
-          (namespace/reg-unresolved-namespace! ctx ns-name
-                                               (with-meta (symbol (namespace symbol-val))
-                                                 (meta expr))))))))
+(defn ^:private resolve-keyword [ctx expr current-ns]
+  (let [aliased? (:namespaced? expr)
+        token (if (symbol-token? expr)
+                (symbol-from-token expr)
+                (:k expr))
+        name-sym (some-> token name symbol)
+        alias-or-ns (some-> token namespace symbol)
+        ns-sym (cond
+                 (and aliased? alias-or-ns)
+                 (-> (namespace/get-namespace ctx (:base-lang ctx) (:lang ctx) current-ns)
+                     (get-in [:aliases alias-or-ns] :clj-kondo/unknown-namespace))
+
+                 aliased?
+                 current-ns
+
+                 :else
+                 alias-or-ns)]
+    {:name name-sym
+     :ns ns-sym
+     :alias (when (and aliased? (not= :clj-kondo/unknown-namespace ns-sym)) alias-or-ns)}))
+
+(defn analyze-keyword
+  ([ctx expr] (analyze-keyword ctx expr {}))
+  ([ctx expr opts]
+   (let [ns (:ns ctx)
+         ns-name (:name ns)
+         keyword-val (:k expr)]
+     (when (:analyze-keywords? ctx)
+       (let [{:keys [:destructuring-expr :keys-destructuring?]} opts
+             current-ns (some-> ns-name symbol)
+             destructuring (when destructuring-expr (resolve-keyword ctx destructuring-expr current-ns))
+             resolved (resolve-keyword ctx expr current-ns)]
+         (analysis/reg-keyword-usage!
+           ctx
+           (:filename ctx)
+           (assoc-some (meta expr)
+                       :def (:def expr)
+                       :keys-destructuring keys-destructuring?
+                       :name (:name resolved)
+                       :alias (when-not (:alias destructuring) (:alias resolved))
+                       :ns (or (:ns destructuring) (:ns resolved))))))
+     (when (and keyword-val (:namespaced? expr))
+       (let [symbol-val (kw->sym keyword-val)
+             {resolved-ns :ns}
+             (namespace/resolve-name ctx ns-name symbol-val)]
+         (if resolved-ns
+           (namespace/reg-used-namespace! ctx
+                                          (-> ns :name)
+                                          resolved-ns)
+           (namespace/reg-unresolved-namespace! ctx ns-name
+                                                (with-meta (symbol (namespace symbol-val))
+                                                           (meta expr)))))))))
 
 (defn analyze-namespaced-map [ctx ^NamespacedMapNode expr]
   (let [children (:children expr)
@@ -47,6 +83,7 @@
   ([ctx expr] (analyze-usages2 ctx expr {}))
   ([ctx expr {:keys [:quote? :syntax-quote?] :as opts}]
    (let [ns (:ns ctx)
+         no-warnings (:no-warnings ctx)
          syntax-quote-level (or (:syntax-quote-level ctx) 0)
          ns-name (:name ns)
          t (tag expr)
@@ -87,8 +124,11 @@
                                                               :str (:string-value expr))))
                    (let [{resolved-ns :ns
                           resolved-name :name
+                          resolved-alias :alias
                           unresolved? :unresolved?
                           clojure-excluded? :clojure-excluded?
+                          interop? :interop?
+                          resolved-core? :resolved-core?
                           :as _m}
                          (let [v (namespace/resolve-name ctx ns-name symbol-val)]
                            (when-not syntax-quote?
@@ -111,6 +151,8 @@
                          end-row (:end-row m)
                          end-col (:end-col m)]
                      (when resolved-ns
+                       ;; this causes the namespace data to be loaded from cache
+                       (swap! (:used-namespaces ctx) update (:base-lang ctx) conj resolved-ns)
                        (namespace/reg-used-namespace! ctx
                                                       ns-name
                                                       resolved-ns)
@@ -121,6 +163,7 @@
                                                           m)
                                                   :resolved-ns resolved-ns
                                                   :ns ns-name
+                                                  :alias resolved-alias
                                                   :unresolved? unresolved?
                                                   :clojure-excluded? clojure-excluded?
                                                   :row row
@@ -133,15 +176,19 @@
                                                   :filename (:filename ctx)
                                                   :unresolved-symbol-disabled?
                                                   (or syntax-quote?
-                                                      ;; e.g.: clojure.core, clojure.string, etc.
+                                                      ;; e.g. usage of clojure.core, clojure.string, etc in (:require [...])
                                                       (= symbol-val (get (:qualify-ns ns) symbol-val)))
                                                   :private-access? (or syntax-quote? (:private-access? ctx))
                                                   :callstack (:callstack ctx)
                                                   :config (:config ctx)
                                                   :in-def (:in-def ctx)
-                                                  :simple? simple?})))))
+                                                  :simple? simple?
+                                                  :interop? interop?
+                                                  ;; save some memory
+                                                  :expr (when-not no-warnings expr)
+                                                  :resolved-core? resolved-core?})))))
                (when (:k expr)
-                 (analyze-keyword ctx expr)))
+                 (analyze-keyword ctx expr opts)))
              :reader-macro
              (doall (mapcat
                      #(analyze-usages2 ctx %
