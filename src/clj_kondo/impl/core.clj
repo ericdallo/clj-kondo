@@ -96,10 +96,13 @@
 (defn sanitize-paths [cfg-dir paths]
   (keep #(sanitize-path cfg-dir %) paths))
 
+(defn home-dir []
+  (if-let [xdg-config-home (System/getenv "XDG_CONFIG_HOME")]
+    (io/file xdg-config-home "clj-kondo")
+    (io/file (System/getProperty "user.home") ".config" "clj-kondo")))
+
 (defn home-config []
-  (let [home-dir  (if-let [xdg-config-home (System/getenv "XDG_CONFIG_HOME")]
-                    (io/file xdg-config-home "clj-kondo")
-                    (io/file (System/getProperty "user.home") ".config" "clj-kondo"))]
+  (let [home-dir (home-dir)]
     (when (.exists home-dir)
       (process-cfg-dir home-dir))))
 

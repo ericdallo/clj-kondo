@@ -180,6 +180,11 @@
   ([& configs]
    (reduce merge-config! configs)))
 
+(defn home-config-dir
+  "Return the clj-kondo home config dir as java.io.File"
+  []
+  (core-impl/home-dir))
+
 ;;;; Scratch
 
 (comment
