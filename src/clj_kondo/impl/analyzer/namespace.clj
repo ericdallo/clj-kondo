@@ -12,7 +12,7 @@
    [clj-kondo.impl.metadata :as meta]
    [clj-kondo.impl.namespace :as namespace]
    [clj-kondo.impl.utils :as utils
-    :refer [node->line one-of tag sexpr vector-node
+    :refer [node->line one-of tag sexpr-foo vector-node
             token-node string-from-token symbol-from-token
             assoc-some]]
    [clojure.set :as set]
@@ -41,7 +41,7 @@
   [ctx prefix libspec-expr]
   (let [libspec-expr (meta/lift-meta-content2 ctx libspec-expr)
         children (:children libspec-expr)
-        form (sexpr libspec-expr)]
+        form (sexpr-foo libspec-expr)]
     (cond (prefix-spec? form)
           (do (when prefix
                 (findings/reg-finding! ctx (node->line (:filename ctx)
@@ -137,7 +137,7 @@
                   :renamed {}}]
           (if-let [child-expr (first children)]
             (let [opt-expr (fnext children)
-                  opt (when opt-expr (sexpr opt-expr))
+                  opt (when opt-expr (sexpr-foo opt-expr))
                   child-k (:k child-expr)]
               (utils/handle-ignore ctx opt-expr)
               (case child-k
@@ -174,7 +174,7 @@
                                                             (let [m (meta %)]
                                                               (assoc m
                                                                      :type :use
-                                                                     :name (with-meta (sexpr %) m)
+                                                                     :name (with-meta (sexpr-foo %) m)
                                                                      :resolved-ns ns-name
                                                                      :ns current-ns-name
                                                                      :refer true
@@ -186,7 +186,7 @@
                                  opt-expr-children)
                            (swap! (:used-namespaces ctx) update (:base-lang ctx) conj ns-name)
                            (update m :referred into
-                                   (map #(with-meta (sexpr %)
+                                   (map #(with-meta (sexpr-foo %)
                                            (meta %))) opt-expr-children))
                          (= :all opt)
                          (assoc m :referred-all opt-expr)
@@ -210,7 +210,7 @@
                  (nnext children)
                  (update m :excluded into (set opt)))
                 :rename
-                (let [opt (zipmap (keys opt) (map #(with-meta (sexpr %) (meta %))
+                (let [opt (zipmap (keys opt) (map #(with-meta (sexpr-foo %) (meta %))
                                                   (take-nth 2 (rest (:children opt-expr)))))]
                   (recur
                    (nnext children)
@@ -383,7 +383,7 @@
                           (when (= :map (tag sc))
                             sc)))))
         _ (when meta-node (common/analyze-expression** ctx meta-node))
-        meta-node-meta (when meta-node (sexpr meta-node))
+        meta-node-meta (when meta-node (sexpr-foo meta-node))
         ns-meta (if meta-node-meta
                   (merge metadata meta-node-meta)
                   metadata)
@@ -406,7 +406,7 @@
               (assoc ctx :config merged-config)
               ctx)
         ns-name (or
-                 (when-let [?name (sexpr ns-name-expr)]
+                 (when-let [?name (sexpr-foo ns-name-expr)]
                    (if (symbol? ?name) ?name
                        (findings/reg-finding!
                         ctx
@@ -451,7 +451,7 @@
                  (analyze-import ctx ns-name libspec-expr)))
         refer-clojure-clauses
         (apply merge-with into
-               (for [?refer-clojure (nnext (sexpr expr))
+               (for [?refer-clojure (nnext (sexpr-foo expr))
                      :when (= :refer-clojure (first ?refer-clojure))
                      [k v] (partition 2 (rest ?refer-clojure))
                      :let [r (case k

@@ -14,7 +14,7 @@
 (defn tag [expr]
   (node/tag expr))
 
-(defn sexpr [expr]
+(defn sexpr-foo [expr]
   (node/sexpr expr))
 
 (def map-node seq/map-node)

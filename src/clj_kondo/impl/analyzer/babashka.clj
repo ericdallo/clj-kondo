@@ -10,7 +10,7 @@
                           [child children]
                           [nil (cons child children)])
         children (doall (keep (fn [child]
-                                (let [s (utils/sexpr child)]
+                                (let [s (utils/sexpr-foo child)]
                                   (when (and (seq? s)
                                              (= 'clojure.core/unquote (first s)))
                                     (first (:children child)))))

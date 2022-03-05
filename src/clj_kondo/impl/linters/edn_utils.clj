@@ -1,10 +1,10 @@
 (ns clj-kondo.impl.linters.edn-utils
-  (:require [clj-kondo.impl.utils :refer [sexpr]]))
+  (:require [clj-kondo.impl.utils :refer [sexpr-foo]]))
 
 (defn sexpr-keys [map-node]
   (let [children (:children map-node)
         keys (take-nth 2 children)
-        keys (map sexpr keys)
+        keys (map sexpr-foo keys)
         vals (take-nth 2 (rest children))]
     (zipmap keys vals)))
 

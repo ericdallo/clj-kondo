@@ -36,14 +36,14 @@
    [clj-kondo.impl.types :as types]
    [clj-kondo.impl.utils :as utils :refer
     [symbol-call node->line parse-string tag select-lang deep-merge one-of
-     linter-disabled? tag sexpr string-from-token assoc-some ctx-with-bindings]]
+     linter-disabled? tag sexpr-foo string-from-token assoc-some ctx-with-bindings]]
    [clojure.set :as set]
    [clojure.string :as str]
    [sci.core :as sci]))
 
 (set! *warn-on-reflection* true)
 
-(declare analyze-expression**)
+(declare analyze-expression**foo)
 
 (defn analyze-children
   ([ctx children]
@@ -72,7 +72,7 @@
                         :len len)]
          (into []
                (comp (map-indexed (fn [i e]
-                                    (analyze-expression** (assoc ctx :idx i) e)))
+                                    (analyze-expression**foo (assoc ctx :idx i) e)))
                      cat)
                children))))))
 
@@ -112,8 +112,8 @@
           :type :syntax})))
     (if (= k v)
       ;; see #915
-      (analyze-expression** prev-ctx v)
-      (analyze-expression** ctx v))))
+      (analyze-expression**foo prev-ctx v)
+      (analyze-expression**foo ctx v))))
 
 (defn ctx-with-linter-disabled [ctx linter]
   (assoc-in ctx [:config :linters linter :level] :off))
@@ -300,7 +300,7 @@
                          :else
                          (recur rest-kvs (merge res
                                                 (extract-bindings ctx k scoped-expr opts)
-                                                {:analyzed (analyze-expression** ctx v)}))))
+                                                {:analyzed (analyze-expression**foo ctx v)}))))
                  res)))
          (findings/reg-finding!
           ctx
@@ -358,7 +358,7 @@
         (let [arg-bindings (extract-bindings ctx arg-vec body {:fn-args? true})
               {return-tag :tag
                arg-tags :tags} (meta arg-bindings)
-              arg-list (sexpr arg-vec)
+              arg-list (sexpr-foo arg-vec)
               arity (analyze-arity arg-list)
               ret (cond-> {:arg-bindings (dissoc arg-bindings :analyzed)
                            :arity arity
@@ -378,11 +378,11 @@
   (let [children (:children expr)]
     (key-linter/lint-map-keys ctx expr)
     (mapcat (fn [[key-expr value-expr]]
-              (let [analyzed-key (analyze-expression** ctx key-expr)
+              (let [analyzed-key (analyze-expression**foo ctx key-expr)
                     analyzed-value (if (= :post (:k key-expr))
-                                     (analyze-expression**
+                                     (analyze-expression**foo
                                       (ctx-with-bindings ctx '{% {}}) value-expr)
-                                     (analyze-expression** ctx value-expr))]
+                                     (analyze-expression**foo ctx value-expr))]
                 (concat analyzed-key analyzed-value)))
             (partition 2 children))))
 
@@ -502,14 +502,14 @@
                              (when (= :map lct) lc))))))
         children (if meta-node2 (butlast children) children)
         ;; use dorun to force evaluation, we don't use the result!
-        _ (when meta-node (dorun (analyze-expression** ctx meta-node)))
-        _ (when meta-node2 (dorun (analyze-expression** ctx meta-node2)))
-        meta-node-meta (when meta-node (sexpr meta-node))
+        _ (when meta-node (dorun (analyze-expression**foo ctx meta-node)))
+        _ (when meta-node2 (dorun (analyze-expression**foo ctx meta-node2)))
+        meta-node-meta (when meta-node (sexpr-foo meta-node))
         [doc-node docstring] (or (and meta-node-meta
                                       (:doc meta-node-meta)
                                       (docstring/docs-from-meta meta-node))
                                  [doc-node docstring])
-        meta-node2-meta (when meta-node2 (sexpr meta-node2))
+        meta-node2-meta (when meta-node2 (sexpr-foo meta-node2))
         [doc-node docstring] (or (and meta-node2-meta
                                       (:doc meta-node2-meta)
                                       (docstring/docs-from-meta meta-node2))
@@ -584,13 +584,13 @@
           [(ctx-with-linters-disabled ctx [:unresolved-symbol :private-call])
            nil]
           [ctx {:quote? true}])]
-    (analyze-expression** ctx matched-val)
+    (analyze-expression**foo ctx matched-val)
     (loop [[constant expr & exprs] (rest children)
            seen-constants #{}]
       (when constant
         (if-not expr
           ;; this is the default expression
-          (analyze-expression** ctx constant)
+          (analyze-expression**foo ctx constant)
           (let [t (tag constant)
                 list-const? (identical? :list t)
                 dupe-cands (if list-const? (:children constant) [constant])]
@@ -613,7 +613,7 @@
               (run! #(analyze-usages2 test-ctx % test-opts) (:children constant))
               (analyze-usages2 test-ctx constant test-opts))
             (when expr
-              (analyze-expression** ctx expr)
+              (analyze-expression**foo ctx expr)
               (recur exprs (into seen-constants (map str dupe-cands))))))))))
 
 (defn expr-bindings [ctx binding-vector scoped-expr]
@@ -666,7 +666,7 @@
                            (update :arities merge arities))
                   value-id (gensym)
                   analyzed-value (when (and value (not for-let?))
-                                   (analyze-expression** ctx* (assoc value :id value-id)))
+                                   (analyze-expression**foo ctx* (assoc value :id value-id)))
                   tag (when (and let? binding (= :token (tag binding)))
                         (let [maybe-call (get @(:calls-by-id ctx) value-id)]
                           (cond maybe-call (:ret maybe-call)
@@ -806,11 +806,11 @@
                                                         :analyzed))]
         (lint-two-forms-binding-vector! ctx call bv)
         (concat (:analyzed bindings)
-                (analyze-expression** ctx condition)
+                (analyze-expression**foo ctx condition)
                 (if if?
                   ;; in the case of if, the binding is only valid in the first expression
                   (concat
-                   (analyze-expression** (ctx-with-bindings ctx
+                   (analyze-expression**foo (ctx-with-bindings ctx
                                                             (dissoc bindings
                                                                     :analyzed))
                                          (first body-exprs))
@@ -1029,7 +1029,7 @@
         [child & children] (if docstring (next children) children)
         [extra-meta extra-meta-node children] (if (and defmulti?
                                                        (identical? :map (utils/tag child)))
-                                                [(sexpr child) child children]
+                                                [(sexpr-foo child) child children]
                                                 [nil nil (cons child children)])
         metadata (if extra-meta (merge metadata extra-meta)
                      metadata)
@@ -1045,7 +1045,7 @@
         def-init (when (and (or (= 'clojure.core/def defined-by)
                                 (= 'cljs.core/def defined-by))
                             (= 1 (count children)))
-                   (analyze-expression** ctx (first children)))
+                   (analyze-expression**foo ctx (first children)))
         init-meta (some-> def-init meta)
         ;; :args and :ret is are the type related keys
         ;; together this is called :arities in reg-var!
@@ -1159,7 +1159,7 @@
 (defn analyze-catch [ctx expr]
   (let [ctx (update ctx :callstack conj [nil 'catch])
         [class-expr binding-expr & exprs] (next (:children expr))
-        _ (analyze-expression** ctx class-expr) ;; analyze usage for unused import linter
+        _ (analyze-expression**foo ctx class-expr) ;; analyze usage for unused import linter
         binding (extract-bindings ctx binding-expr (last exprs) {})]
     (analyze-children (ctx-with-bindings ctx binding)
                       exprs)))
@@ -1194,7 +1194,7 @@
           ;; TODO: should never get here, probably syntax error
           (recur
            rst-children
-           (into analyzed (analyze-expression** ctx fst-child))
+           (into analyzed (analyze-expression**foo ctx fst-child))
            false false has-catch-or-finally?))
         (do
           (when-not has-catch-or-finally?
@@ -1298,7 +1298,7 @@
       (when-first [c children]
         (if-let [sym (utils/symbol-from-token c)]
           ;; we have encountered a protocol or interface name
-          (do (analyze-expression** ctx c)
+          (do (analyze-expression**foo ctx c)
               (recur sym (rest children)))
           ;; Assume protocol fn impl. Analyzing the fn sym can cause false
           ;; positives. We are passing it to analyze-fn as is, so (foo [x y z])
@@ -1325,7 +1325,7 @@
   (let [children (next (:children expr))
         [method-name-node dispatch-val-node & fn-tail] children
         _ (analyze-usages2 ctx method-name-node)
-        _ (analyze-expression** ctx dispatch-val-node)]
+        _ (analyze-expression**foo ctx dispatch-val-node)]
     (analyze-fn ctx {:children (cons nil fn-tail)})))
 
 (defn analyze-areduce [ctx expr]
@@ -1334,9 +1334,9 @@
         index-binding (extract-bindings ctx index-binding-expr expr {})
         ret-binding (extract-bindings ctx ret-binding-expr expr {})
         bindings (merge index-binding ret-binding)
-        analyzed-array-expr (analyze-expression** ctx array-expr)
-        analyzed-init-expr (analyze-expression** ctx init-expr)
-        analyzed-body (analyze-expression** (ctx-with-bindings ctx bindings) body)]
+        analyzed-array-expr (analyze-expression**foo ctx array-expr)
+        analyzed-init-expr (analyze-expression**foo ctx init-expr)
+        analyzed-body (analyze-expression**foo (ctx-with-bindings ctx bindings) body)]
     (concat analyzed-array-expr analyzed-init-expr analyzed-body)))
 
 (defn analyze-this-as [ctx expr]
@@ -1348,7 +1348,7 @@
 (defn analyze-as-> [ctx expr]
   (let [children (next (:children expr))
         [as-expr name-expr & forms-exprs] children
-        analyzed-as-expr (analyze-expression** ctx as-expr)
+        analyzed-as-expr (analyze-expression**foo ctx as-expr)
         binding (extract-bindings ctx name-expr expr {})]
     (concat analyzed-as-expr
             (analyze-children (ctx-with-bindings ctx binding)
@@ -1456,7 +1456,7 @@
   (let [children (next (:children expr))
         condition (first children)
         body (next children)]
-    (dorun (analyze-expression**
+    (dorun (analyze-expression**foo
             ;; avoid redundant do check for condition
             (update ctx :callstack conj nil)
             condition))
@@ -1568,7 +1568,7 @@
 (defn analyze-hof [ctx expr resolved-as-name hof-ns-name hof-resolved-name]
   (let [children (next (:children expr))
         f (first children)
-        fana (analyze-expression** ctx f)
+        fana (analyze-expression**foo ctx f)
         fsym (utils/symbol-from-token f)
         binding (get (:bindings ctx) fsym)
         arity (if binding
@@ -1684,7 +1684,7 @@
   (swap! (:namespaces ctx) assoc-in [base-lang lang current-ns :gen-class] true)
   nil)
 
-(defn analyze-extend-type-children
+(defn analyze-extend-type-children-foo
   "Used for analyzing children of extend-type, reify and extend-protocol."
   [ctx children]
   (let [children (map (fn [node]
@@ -1699,7 +1699,7 @@
 
 (defn analyze-reify [ctx expr]
   (let [children (next (:children expr))]
-    (analyze-extend-type-children ctx children)))
+    (analyze-extend-type-children-foo ctx children)))
 
 (defn analyze-extend-type [ctx expr]
   (let [children (next (:children expr))
@@ -1709,13 +1709,13 @@
                            (conj config
                                  'number 'function 'default 'object 'string)))
               ctx)]
-    (analyze-extend-type-children ctx children)))
+    (analyze-extend-type-children-foo ctx children)))
 
 (defn analyze-cljs-exists? [ctx expr]
   (run! #(analyze-usages2 (ctx-with-linters-disabled ctx [:unresolved-symbol :unresolved-namespace]) %)
         (next (:children expr))))
 
-(defn analyze-call
+(defn analyze-call-foo
   [{:keys [:top-level? :base-lang :lang :ns :config :dependencies] :as ctx}
    {:keys [:arg-count
            :full-fn-name
@@ -1863,7 +1863,7 @@
                                                ns-name
                                                resolved-namespace)
                 (let [node expanded]
-                  (analyze-expression** (assoc-some ctx :defined-by (:defined-by transformed))
+                  (analyze-expression**foo (assoc-some ctx :defined-by (:defined-by transformed))
                                         node)))
               ;;;; End macroexpansion
               (let [fq-sym (when (and resolved-namespace
@@ -1918,11 +1918,11 @@
                             ctx (assoc ctx :in-comment true)]
                         (analyze-children ctx children))
                       (-> some->)
-                      (analyze-expression** ctx (macroexpand/expand-> ctx expr))
+                      (analyze-expression**foo ctx (macroexpand/expand-> ctx expr))
                       (->> some->>)
-                      (analyze-expression** ctx (macroexpand/expand->> ctx expr))
+                      (analyze-expression**foo ctx (macroexpand/expand->> ctx expr))
                       doto
-                      (analyze-expression** ctx (macroexpand/expand-doto ctx expr))
+                      (analyze-expression**foo ctx (macroexpand/expand-doto ctx expr))
                       reify (analyze-reify ctx expr)
                       (extend-protocol extend-type specify!) (analyze-extend-type ctx expr)
                       (. .. proxy defcurried)
@@ -1936,7 +1936,7 @@
                       (amap)
                       (analyze-amap ctx expr)
                       (cond-> cond->>)
-                      (analyze-expression** ctx (macroexpand/expand-cond->
+                      (analyze-expression**foo ctx (macroexpand/expand-cond->
                                                  ctx expr
                                                  resolved-as-name))
                       (let let* for doseq dotimes with-open with-local-vars)
@@ -2028,7 +2028,7 @@
                         ([clojure.core.async alt!] [clojure.core.async alt!!]
                          [cljs.core.async alt!] [cljs.core.async alt!!])
                         (core-async/analyze-alt! (assoc ctx
-                                                        :analyze-expression** analyze-expression**
+                                                        :analyze-expression** analyze-expression**foo
                                                         :extract-bindings extract-bindings)
                                                  expr)
                         ([clojure.core.async defblockingop])
@@ -2036,7 +2036,7 @@
                         ([clojure.core.reducers defcurried])
                         (analyze-defn ctx expr defined-by)
                         ([clojure.template do-template])
-                        (analyze-expression** ctx (macroexpand/expand-do-template ctx expr))
+                        (analyze-expression**foo ctx (macroexpand/expand-do-template ctx expr))
                         ([datahike.api q]
                          [datascript.core q]
                          [datomic.api q]
@@ -2312,7 +2312,7 @@
         children (rest children)]
     (analyze-children ctx children)))
 
-(defn analyze-expression**
+(defn analyze-expression**foo
   [{:keys [:bindings :lang] :as ctx}
    {:keys [:children] :as expr}]
   (when expr
@@ -2342,7 +2342,7 @@
         :namespaced-map (usages/analyze-namespaced-map
                          (-> ctx
                              (assoc :analyze-expression**
-                                    analyze-expression**)
+                                    analyze-expression**foo)
                              (update :callstack #(cons [nil t] %)))
                          expr)
         :map (do (key-linter/lint-map-keys ctx expr)
@@ -2439,7 +2439,7 @@
 
                           (types/add-arg-type-from-expr ctx expr ret-tag)
                           (types/add-arg-type-from-expr ctx expr))
-                        (let [ret (analyze-call ctx {:arg-count arg-count
+                        (let [ret (analyze-call-foo ctx {:arg-count arg-count
                                                      :full-fn-name full-fn-name
                                                      :row row
                                                      :col col
@@ -2485,7 +2485,7 @@
 ;; Hack to make a few functions available in a common namespace without
 ;; introducing circular depending namespaces. NOTE: alter-var-root! didn't work
 ;; with GraalVM
-(vreset! common {'analyze-expression** analyze-expression**
+(vreset! common {'analyze-expression** analyze-expression**foo
                  'analyze-children analyze-children
                  'analyze-like-let analyze-like-let
                  'ctx-with-bindings ctx-with-bindings
@@ -2501,7 +2501,7 @@
                     :top-level? true)
          ns (:ns ctx)
          [first-parsed & rest-parsed :as all]
-         (analyze-expression** ctx expression)]
+         (analyze-expression**foo ctx expression)]
     (if (seq all)
       (case (:type first-parsed)
         nil (recur ctx ns rest-parsed)

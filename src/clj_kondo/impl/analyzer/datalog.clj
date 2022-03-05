@@ -3,7 +3,7 @@
   (:require
    [clj-kondo.impl.findings :as findings]
    [clj-kondo.impl.utils :as utils :refer
-    [node->line tag one-of tag sexpr]]
+    [node->line tag one-of tag sexpr-foo]]
    [datalog.parser :as datalog]))
 
 (defn analyze-datalog [ctx expr]
@@ -17,7 +17,7 @@
                            edn-node)))]
     (when datalog-node
       (try
-        (datalog/parse (sexpr datalog-node))
+        (datalog/parse (sexpr-foo datalog-node))
         nil
         (catch Exception e
           (findings/reg-finding! ctx

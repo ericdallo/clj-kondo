@@ -2,13 +2,13 @@
   "Linter for deps.edn and bb.edn file contents."
   (:require [clj-kondo.impl.findings :as findings]
             [clj-kondo.impl.linters.edn-utils :as edn-utils]
-            [clj-kondo.impl.utils :refer [sexpr node->line]]
+            [clj-kondo.impl.utils :refer [sexpr-foo node->line]]
             [clojure.string :as str]))
 
 (set! *warn-on-reflection* true)
 
 (defn lint-paths-container [ctx node ]
-  (let [form (sexpr node)]
+  (let [form (sexpr-foo node)]
     (when-not (vector? form)
       (findings/reg-finding!
        ctx
@@ -20,7 +20,7 @@
 
 (defn lint-bb-edn-paths-elems [ctx node]
   (doseq [node (:children node)]
-    (let [form (sexpr node)]
+    (let [form (sexpr-foo node)]
       (when-not (string? form)
         (findings/reg-finding!
          ctx
@@ -31,7 +31,7 @@
 
 (defn lint-deps-edn-paths-elems [ctx node]
   (doseq [node (:children node)]
-    (let [form (sexpr node)]
+    (let [form (sexpr-foo node)]
       (when-not (or (keyword? form) (string? form))
         (findings/reg-finding!
          ctx
@@ -49,7 +49,7 @@
     (lint-deps-edn-paths-elems ctx node)))
 
 (defn lint-qualified-lib [ctx node]
-  (let [form (sexpr node)]
+  (let [form (sexpr-foo node)]
     (when-not (or (qualified-symbol? form)
                   ;; fix for namespaced maps
                   (:namespace node))
@@ -74,7 +74,7 @@
         lib))))
 
 (defn lint-dep-coord [ctx lib node]
-  (let [form (sexpr node)
+  (let [form (sexpr-foo node)
         git-url (or (:git/url form)
                     (derive-git-url-from-lib lib))]
     (if-not (map? form)
@@ -135,11 +135,11 @@
 (defn lint-deps [ctx kvs]
   (doseq [[lib coord] kvs]
     (let [error? (lint-qualified-lib ctx lib)]
-      (lint-dep-coord ctx (when-not error? (sexpr lib)) coord))))
+      (lint-dep-coord ctx (when-not error? (sexpr-foo lib)) coord))))
 
 (defn lint-alias-keys [ctx nodes]
   (run! (fn [node]
-          (let [form (sexpr node)]
+          (let [form (sexpr-foo node)]
             (if (not (keyword? form))
               (findings/reg-finding!
                ctx
@@ -159,7 +159,7 @@
 (defn lint-aliases [ctx alias-nodes]
   (run! (fn [alias-node]
           (when-let [jvm-opts-node (:jvm-opts alias-node)]
-            (let [jvm-opts-form (sexpr jvm-opts-node)]
+            (let [jvm-opts-form (sexpr-foo jvm-opts-node)]
               (when (not (and (sequential? jvm-opts-form)
                               (every? string? jvm-opts-form)))
                 (findings/reg-finding!
@@ -173,7 +173,7 @@
 (defn lint-mvn-repos [ctx mvn-repos]
   (let [repo-map-nodes (edn-utils/val-nodes mvn-repos)]
     (run! (fn [repo-map-node]
-            (let [form (sexpr repo-map-node)]
+            (let [form (sexpr-foo repo-map-node)]
               (when-not (and (map? form)
                              (:url form))
                 (findings/reg-finding!
@@ -199,7 +199,7 @@
 (defn lint-tasks [ctx expr]
   (let [tasks (edn-utils/sexpr-keys expr)
         known-task? (set (keys tasks))
-        path (find-task-cycle (sexpr expr))
+        path (find-task-cycle (sexpr-foo expr))
         rotate #(vec (take (count path) (drop % (cycle path))))
         seg->index (->> (partition 2 1 (conj path (first path)))
                         (map-indexed #(do [%2 %1]))

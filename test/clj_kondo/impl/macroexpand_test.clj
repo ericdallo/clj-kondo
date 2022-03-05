@@ -1,7 +1,7 @@
 (ns clj-kondo.impl.macroexpand-test
   (:require
    [clj-kondo.impl.macroexpand :as macroexpand]
-   [clj-kondo.impl.utils :refer [parse-string tag sexpr]]
+   [clj-kondo.impl.utils :refer [parse-string tag sexpr-foo]]
    [clojure.test :as t :refer [deftest is testing]]))
 
 (defn location [node]
@@ -18,7 +18,7 @@
                                    (parse-string "(-> 1 inc inc)")))))))
   (testing "with metadata"
     (is (= '(clojure.string/includes? (str "foo") "foo")
-           (sexpr
+           (sexpr-foo
             (macroexpand/expand-> {}
              (parse-string "(-> \"foo\" ^String str (clojure.string/includes? \"foo\"))")))))))
 

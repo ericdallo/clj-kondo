@@ -7,7 +7,7 @@
    [clj-kondo.impl.namespace :as namespace]
    [clj-kondo.impl.types :as types]
    [clj-kondo.impl.types.utils :as tu]
-   [clj-kondo.impl.utils :as utils :refer [node->line constant? sexpr tag export-ns-sym]]
+   [clj-kondo.impl.utils :as utils :refer [node->line constant? sexpr-foo tag export-ns-sym]]
    [clj-kondo.impl.var-info :as var-info]
    [clojure.set :as set]
    [clojure.string :as str]))
@@ -17,7 +17,7 @@
 (defn lint-cond-constants! [ctx conditions]
   (loop [[condition & rest-conditions] conditions]
     (when condition
-      (let [v (sexpr condition)]
+      (let [v (sexpr-foo condition)]
         (when-not (or (nil? v) (false? v))
           (when (and (constant? condition)
                      (not (or (nil? v) (false? v))))

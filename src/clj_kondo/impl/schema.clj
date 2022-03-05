@@ -9,10 +9,10 @@
         (loop [[fst-child & rest-children] children
                res {:new-children []
                     :schemas []}]
-          (let [sexpr (when fst-child (utils/sexpr fst-child))]
+          (let [sexpr (when fst-child (utils/sexpr-foo fst-child))]
             (cond (not fst-child)
                   res
-                  (= ':- (utils/sexpr fst-child))
+                  (= ':- (utils/sexpr-foo fst-child))
                   (recur (next rest-children)
                          (update res :schemas conj (first rest-children)))
                   (vector? sexpr)
@@ -38,7 +38,7 @@
                index 0
                res {:new-children []
                     :schemas []}]
-          (let [sexpr (when fst-child (utils/sexpr fst-child))]
+          (let [sexpr (when fst-child (utils/sexpr-foo fst-child))]
             (cond (not fst-child)
                   res
                   (= ':- sexpr)

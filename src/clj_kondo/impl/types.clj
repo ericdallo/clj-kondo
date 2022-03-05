@@ -9,7 +9,7 @@
    [clj-kondo.impl.types.clojure.string :refer [clojure-string]]
    [clj-kondo.impl.types.utils :as type-utils]
    [clj-kondo.impl.utils :as utils :refer
-    [tag sexpr]]
+    [tag sexpr-foo]]
    [clojure.string :as str]))
 
 (def built-in-specs
@@ -177,12 +177,12 @@
                  (let [kns (symbol kns)
                        kns (some-> ctx :ns :qualify-ns (get kns))
                        res (if kns (clojure.core/keyword (str kns) kname)
-                               (sexpr expr))]
+                               (sexpr-foo expr))]
                    res)
                  (if-let [kns (some-> ctx :ns :name)]
                    (clojure.core/keyword (str kns) kname)
-                   (sexpr expr))))
-             (sexpr expr))
+                   (sexpr-foo expr))))
+             (sexpr-foo expr))
     ::unknown))
 
 (defn map->tag [ctx expr]
@@ -273,7 +273,7 @@
                         (:tag (spec-from-list-expr ctx expr))) ;; a call we know nothing about
               :fn :fn
               :multi-line :string
-              :token (let [v (sexpr expr)]
+              :token (let [v (sexpr-foo expr)]
                        (cond
                          (nil? v) :nil
                          (symbol? v) (if quoted? :symbol

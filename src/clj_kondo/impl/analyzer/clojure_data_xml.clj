@@ -5,7 +5,7 @@
 (set! *warn-on-reflection* true)
 
 (defn ->alias-node [alias-node]
-  (let [sexpr (utils/sexpr alias-node)]
+  (let [sexpr (utils/sexpr-foo alias-node)]
     (cond (string? sexpr)
           (list-node [(token-node 'quote)
                       (token-node (symbol sexpr))])
@@ -31,7 +31,7 @@
       (when children
         (let [alias-node (first children)
               ns-str-node (second children)
-              ns-str (utils/sexpr ns-str-node)
+              ns-str (utils/sexpr-foo ns-str-node)
               uri (uri-symbol ns-str)]
           (common/analyze-expression** ctx
                                        (list-node

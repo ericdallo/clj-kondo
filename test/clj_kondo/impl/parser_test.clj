@@ -8,18 +8,18 @@
   (is (zero? (count (:children (parse-string "#_#_1 2"))))))
 
 (deftest namespaced-maps-test
-  (is (= '#:it{:a 1} (utils/sexpr (utils/parse-string "#::it {:a 1}"))))
-  (is (= '#:it{:a #:it{:a 1}} (utils/sexpr (utils/parse-string "#::it {:a #::it{:a 1}}"))))
-  (is (= '#:__current-ns__{:a 1} (utils/sexpr (utils/parse-string "#::{:a 1}")))))
+  (is (= '#:it{:a 1} (utils/sexpr-foo (utils/parse-string "#::it {:a 1}"))))
+  (is (= '#:it{:a #:it{:a 1}} (utils/sexpr-foo (utils/parse-string "#::it {:a #::it{:a 1}}"))))
+  (is (= '#:__current-ns__{:a 1} (utils/sexpr-foo (utils/parse-string "#::{:a 1}")))))
 
 (deftest nan-test
-  (is (= true (Double/isNaN (utils/sexpr (utils/parse-string "##NaN"))))))
+  (is (= true (Double/isNaN (utils/sexpr-foo (utils/parse-string "##NaN"))))))
 
 (deftest inf-test
-  (is (= true (let [thing (utils/sexpr (utils/parse-string "##Inf"))]
+  (is (= true (let [thing (utils/sexpr-foo (utils/parse-string "##Inf"))]
                 (and (Double/isInfinite thing)
                      (< 0 thing)))))
-  (is (= true (let [thing (utils/sexpr (utils/parse-string "##-Inf"))]
+  (is (= true (let [thing (utils/sexpr-foo (utils/parse-string "##-Inf"))]
                 (and (Double/isInfinite thing)
                      (< thing 0))))))
 
@@ -60,9 +60,9 @@
 
 (deftest sexpr-test
   (is (= '(clojure.core/unquote (+ 1 2 3))
-         (utils/sexpr (first (:children (utils/parse-string "`~(+ 1 2 3)"))))))
+         (utils/sexpr-foo (first (:children (utils/parse-string "`~(+ 1 2 3)"))))))
   (is (= '(clojure.core/unquote-splicing (+ 1 2 3))
-         (utils/sexpr (first (:children (utils/parse-string "`~@(+ 1 2 3)")))))))
+         (utils/sexpr-foo (first (:children (utils/parse-string "`~@(+ 1 2 3)")))))))
 
 ;;;; Scratch
 

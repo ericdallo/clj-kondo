@@ -3,14 +3,14 @@
   (:require [clj-kondo.impl.config :refer [default-config]]
             [clj-kondo.impl.findings :as findings]
             [clj-kondo.impl.linters.edn-utils :as edn-utils]
-            [clj-kondo.impl.utils :refer [sexpr node->line]]))
+            [clj-kondo.impl.utils :refer [sexpr-foo node->line]]))
 
 (def expected-linter-keys (set (keys (:linters default-config))))
 
 (defn lint-map-vals [ctx node-map ks]
   (doseq [[kw-node val-node] node-map]
-    (let [form (sexpr val-node)]
-      (when (and (contains? ks (sexpr kw-node))
+    (let [form (sexpr-foo val-node)]
+      (when (and (contains? ks (sexpr-foo kw-node))
                  (not (map? form)))
         (findings/reg-finding!
          ctx
@@ -21,7 +21,7 @@
 
 (defn lint-linters [ctx node-map config-map]
   (doseq [key-node (keys node-map)]
-    (let [k (sexpr key-node)]
+    (let [k (sexpr-foo key-node)]
       (when (and
              (simple-keyword? k)
              (not (contains? expected-linter-keys k)))
@@ -33,7 +33,7 @@
                      (str "Unexpected linter name: " k))))))
   (lint-map-vals ctx node-map expected-linter-keys)
   (doseq [key-node (keys config-map)]
-    (let [k (sexpr key-node)]
+    (let [k (sexpr-foo key-node)]
       (when (and
              (simple-keyword? k)
              (contains? expected-linter-keys k))

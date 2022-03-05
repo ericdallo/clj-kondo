@@ -44,6 +44,6 @@
 (defn testing-hook [{:keys [node]}]
   (let [[testing testing-str & children] (:children node)
         new-node (assoc node :children
-                        (list* (assoc-in testing [:context :clojure.test :testing-str] (utils/sexpr testing-str))
+                        (list* (assoc-in testing [:context :clojure.test :testing-str] (utils/sexpr-foo testing-str))
                                testing-str children))]
     {:node new-node}))

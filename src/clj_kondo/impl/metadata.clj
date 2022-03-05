@@ -6,7 +6,7 @@
    [clj-kondo.impl.utils :as utils]))
 
 (defn meta-node->map [ctx node]
-  (let [s (utils/sexpr node)]
+  (let [s (utils/sexpr-foo node)]
     (cond (keyword? s) {s true}
           (map? s)
           (do

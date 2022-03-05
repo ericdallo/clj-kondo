@@ -5,7 +5,7 @@
             [clj-kondo.impl.metadata :as meta]
             [clj-kondo.impl.rewrite-clj.node :as node]
             [clj-kondo.impl.utils :as utils :refer [assoc-some vector-node list-node
-                                                    sexpr token-node keyword-node
+                                                    sexpr-foo token-node keyword-node
                                                     string-node map-node map-vals *ctx*]]
             [clojure.java.io :as io]
             [clojure.walk :as walk]
@@ -111,7 +111,7 @@
                      node)) node))
 
 (defn -macroexpand [macro node bindings]
-  (let [call (sexpr node)
+  (let [call (sexpr-foo node)
         args (rest call)
         res (apply macro call bindings args)
         coerced (coerce res)
@@ -138,7 +138,7 @@
    'map-node? map-node?
    'list-node (comp mark-generate list-node)
    'list-node? list-node?
-   'sexpr sexpr
+   'sexpr sexpr-foo
    'reg-finding! reg-finding!
    'reg-keyword! reg-keyword!
    'coerce coerce
