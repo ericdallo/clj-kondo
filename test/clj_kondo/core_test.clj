@@ -141,17 +141,26 @@
       (clj-kondo/run!
        {:lint   [(if file? (str code) "-")]
         :lang lang
-        :config {:linters {:org.acme/forbidden-var {:level :error}}
+        :config {:linters {:org.acme/forbidden-var {:level :error}
+                           :org.acme/unused-public-var {:level :error}}
                  :analysis true}
         :custom-lint-fn (fn [{:keys [analysis reg-finding!]}]
                           (let [evals (filter #(and (= 'clojure.core (:to %))
-                                                    (= 'eval (:name %))) (:var-usages analysis))]
+                                                    (= 'eval (:name %))) (:var-usages analysis))
+                                unused-vars (filter #(= 'my-unused-var (:name %))
+                                                    (:var-definitions analysis))]
                             (doseq [e evals]
                               (reg-callback
                                (reg-finding! (assoc (select-keys e [:filename :row :end-row :col :end-col])
                                                     :end-row (:name-end-row e)
                                                     :end-col (:name-end-col e)
-                                                    :type :org.acme/forbidden-var))))))}))))
+                                                    :type :org.acme/forbidden-var))))
+                            (doseq [var unused-vars]
+                              (reg-callback
+                               (reg-finding! (assoc (select-keys var [:filename :row :end-row :col :end-col])
+                                                    :end-row (:name-end-row var)
+                                                    :end-col (:name-end-col var)
+                                                    :type :org.acme/unused-public-var))))))}))))
 
 (defn file-analyzed-fn [paths lang file-analyzed-fn extra-config]
   (clj-kondo/run!
@@ -173,11 +182,16 @@
   (testing "ignore hints return nil during reg-finding! for clj files"
     (let [res (custom-linter "#_:clj-kondo/ignore (eval '(+ 1 2 3))" :clj #(is (not %)))]
       (is (empty? (:findings res)))))
-  (testing "ignore hints return nil during reg-finding! for clj files"
+  (testing "ignore hints return nil during reg-finding! for cljs files"
     (let [res (custom-linter "#_:clj-kondo/ignore (eval '(+ 1 2 3))" :cljs #(is (not %)))]
       (is (empty? (:findings res)))))
   (testing "ignore hints return nil during reg-finding! for cljc files"
     (let [res (custom-linter (io/file "corpus/custom_lint_fn_ignore.cljc") :cljc #(is (not %)))]
+      (is (empty? (:findings res)))))
+  (testing "ignore defprotocol return nil during reg-finding! for clj files"
+    (let [res (custom-linter "(defprotocol Foo #_:clj-kondo/ignore (my-unused-var [this]))"
+                             :clj
+                             #(is (not %)))]
       (is (empty? (:findings res))))))
 
 (deftest run-skip-lint
